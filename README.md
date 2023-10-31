@@ -1,2 +1,2 @@
 # 3SecVideos
- Deleting videos shorter than three seconds
+ Deleting or moving videos shorter than three seconds
