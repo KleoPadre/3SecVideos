@@ -2,8 +2,8 @@ import os
 import shutil
 import moviepy.editor as mp
 
-source_folder = '/Volumes/ext_files/photo_copy'
-destination_folder = '/Volumes/ext_files/photo_copy1'
+source_folder = '...'
+destination_folder = '...'
 
 # Функция для перемещения файла с сохранением подпапок
 def move_video_file(src, dst):

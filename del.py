@@ -2,7 +2,7 @@ import os
 import shutil
 import moviepy.editor as mp
 
-source_folder = '/Volumes/photo'
+source_folder = '...'
 
 # Функция для удаления файла
 def delete_video_file(file_path):
