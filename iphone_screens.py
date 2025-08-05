@@ -76,8 +76,8 @@ def move_screenshots(source_folder, destination_folder):
 
 
 # === Точка входа ===
-source_folder = '/Volumes/homes'
-destination_folder = '/Users/levon.osipov/Downloads/2'
+source_folder = ''
+destination_folder = ''
 
 init_logging()
 move_screenshots(source_folder, destination_folder)
