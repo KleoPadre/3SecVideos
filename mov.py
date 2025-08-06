@@ -2,8 +2,8 @@ import os
 import shutil
 import subprocess
 
-source_folder = ''
-destination_folder = ''
+source_folder = '/Volumes/photo'
+destination_folder = '/Users/levon.osipov/Downloads/1'
 
 # Расширения видеофайлов
 video_extensions = ['.mp4', '.avi', '.mov', '.mkv']
@@ -54,7 +54,7 @@ for root, dirs, files in os.walk(source_folder):
                 duration = get_video_duration(file_path)
                 if duration is None:
                     print(f'[{current_file}/{total_files}] Error: {file_path} - Unable to get duration')
-                elif duration < 3:
+                elif duration <= 3:
                     move_video_file(file_path, destination_folder)
                     print(f'[{current_file}/{total_files}] Moved: {file_path}')
                 else:
