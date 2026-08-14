@@ -29,13 +29,20 @@ def fallback_python_for_tkinter(
     current_python: Path,
     *,
     platform: str = sys.platform,
-    system_python: Path = Path("/usr/bin/python3"),
+    candidates: tuple[Path, ...] = (
+        Path("/opt/homebrew/opt/python@3.14/bin/python3.14"),
+        Path("/opt/homebrew/bin/python3"),
+        Path("/usr/bin/python3"),
+    ),
     system_exists=lambda path: path.is_file(),
 ) -> Path | None:
-    """Возвращает системный Python macOS для запуска Tkinter, если он доступен."""
-    if platform != "darwin" or current_python == system_python or not system_exists(system_python):
+    """Возвращает Python с Tkinter, предпочитая современную версию Homebrew."""
+    if platform != "darwin":
         return None
-    return system_python
+    for candidate in candidates:
+        if candidate != current_python and system_exists(candidate):
+            return candidate
+    return None
 
 
 @dataclass(frozen=True)
@@ -311,7 +318,6 @@ class MediaFilterApp:
 
     def _configure_styles(self) -> None:
         style = ttk.Style(self.root)
-        style.theme_use("clam")
         style.configure(".", background=self.BACKGROUND, foreground=self.FOREGROUND)
         style.configure("TFrame", background=self.BACKGROUND)
         style.configure("Panel.TFrame", background=self.PANEL)

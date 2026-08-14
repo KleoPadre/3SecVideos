@@ -21,11 +21,23 @@ class RunTests(unittest.TestCase):
         result = run.fallback_python_for_tkinter(
             Path("/Users/test/.pyenv/bin/python3"),
             platform="darwin",
-            system_python=system_python,
+            candidates=(system_python,),
             system_exists=lambda _: True,
         )
 
         self.assertEqual(result, system_python)
+
+    def test_для_tkinter_предпочитает_python_homebrew(self):
+        """Ошибка: при наличии современного Tk 9 запускается устаревший системный Tk 8.5."""
+        modern_python = Path("/opt/homebrew/opt/python@3.14/bin/python3.14")
+
+        result = run.fallback_python_for_tkinter(
+            Path("/Users/test/.pyenv/bin/python3"),
+            platform="darwin",
+            system_exists=lambda path: path == modern_python,
+        )
+
+        self.assertEqual(result, modern_python)
 
     def test_подготовка_параметров_преобразует_порог_в_число(self):
         """Ошибка: строковый порог попадает в обработку без преобразования."""
