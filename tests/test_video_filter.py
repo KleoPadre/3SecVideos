@@ -27,6 +27,24 @@ class VideoFilterTests(unittest.TestCase):
 
             self.assertEqual(result, destination_root / "nested" / "clip_1.mov")
 
+    def test_предпросмотр_не_изменяет_короткое_видео(self):
+        """Ошибка: режим предпросмотра удаляет файл вместо простого вывода плана."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "clip.mov"
+            path.touch()
+            options = video_filter.Options(
+                source=Path(directory),
+                action="удалить",
+                destination=None,
+                max_duration=3.0,
+                dry_run=True,
+            )
+
+            result = video_filter.process_video(path, options, duration_getter=lambda _: 2.0)
+
+            self.assertEqual(result, "предпросмотр")
+            self.assertTrue(path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

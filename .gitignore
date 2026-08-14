@@ -1,2 +1,4 @@
 venv/
 screens.log
+__pycache__/
+*.pyc
