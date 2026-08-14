@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import importlib
 import math
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -22,6 +23,19 @@ else:
 
 
 VIDEO_EXTENSIONS = {".avi", ".mkv", ".mov", ".mp4"}
+
+
+def fallback_python_for_tkinter(
+    current_python: Path,
+    *,
+    platform: str = sys.platform,
+    system_python: Path = Path("/usr/bin/python3"),
+    system_exists=lambda path: path.is_file(),
+) -> Path | None:
+    """Возвращает системный Python macOS для запуска Tkinter, если он доступен."""
+    if platform != "darwin" or current_python == system_python or not system_exists(system_python):
+        return None
+    return system_python
 
 
 @dataclass(frozen=True)
@@ -636,6 +650,13 @@ class MediaFilterApp:
 def main() -> None:
     """Создаёт окно приложения и запускает цикл Tkinter."""
     if TKINTER_IMPORT_ERROR is not None:
+        fallback_python = fallback_python_for_tkinter(Path(sys.executable))
+        if fallback_python is not None:
+            print("Tkinter недоступен в текущем Python. Запускаю системный Python macOS.")
+            os.execv(
+                str(fallback_python),
+                [str(fallback_python), str(Path(__file__).resolve()), *sys.argv[1:]],
+            )
         raise SystemExit(
             "Tkinter недоступен в текущем Python. Установите Python с поддержкой Tk: "
             f"{TKINTER_IMPORT_ERROR}"

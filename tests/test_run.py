@@ -14,6 +14,19 @@ import run
 class RunTests(unittest.TestCase):
     """Проверяет отбор файлов и построение путей назначения."""
 
+    def test_находит_системный_python_для_tkinter_на_macos(self):
+        """Ошибка: запуск из Python без Tkinter не переключается на системный Python macOS."""
+        system_python = Path("/usr/bin/python3")
+
+        result = run.fallback_python_for_tkinter(
+            Path("/Users/test/.pyenv/bin/python3"),
+            platform="darwin",
+            system_python=system_python,
+            system_exists=lambda _: True,
+        )
+
+        self.assertEqual(result, system_python)
+
     def test_подготовка_параметров_преобразует_порог_в_число(self):
         """Ошибка: строковый порог попадает в обработку без преобразования."""
         with tempfile.TemporaryDirectory() as directory:
