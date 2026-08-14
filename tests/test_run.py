@@ -14,6 +14,46 @@ import run
 class RunTests(unittest.TestCase):
     """Проверяет отбор файлов и построение путей назначения."""
 
+    def test_подготовка_параметров_преобразует_порог_в_число(self):
+        """Ошибка: строковый порог попадает в обработку без преобразования."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "исходные"
+            destination = root / "целевые"
+            source.mkdir()
+            destination.mkdir()
+
+            options, error = run.build_options("видео", source, destination, "4")
+
+            self.assertIsNone(error)
+            self.assertIsNotNone(options)
+            self.assertEqual(options.max_duration, 4.0)
+
+    def test_подготовка_параметров_отклоняет_некорректный_порог(self):
+        """Ошибка: нечисловой порог приводит к исключению из обработчика UI."""
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+
+            options, error = run.build_options("видео", source, None, "не число")
+
+            self.assertIsNone(options)
+            self.assertEqual(error, "Укажите максимальную длительность числом.")
+
+    def test_подготовка_скриншотов_игнорирует_скрытый_порог(self):
+        """Ошибка: скрытый порог видео блокирует запуск режима скриншотов."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "исходные"
+            destination = root / "целевые"
+            source.mkdir()
+            destination.mkdir()
+
+            options, error = run.build_options("скриншоты", source, destination, "")
+
+            self.assertIsNone(error)
+            self.assertIsNotNone(options)
+            self.assertEqual(options.mode, "скриншоты")
+
     def test_длительность_равная_порогу_подходит(self):
         """Ошибка: строгое сравнение исключает ролик на границе порога."""
         self.assertTrue(run.is_short_video(4.0, 4.0))

@@ -2,13 +2,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import video_filter
+import run
 
 
 class VideoFilterTests(unittest.TestCase):
     def test_ролик_на_границе_порога_подходит(self):
         """Ошибка: строгое сравнение исключает видео длительностью ровно 3 секунды."""
-        self.assertTrue(video_filter.is_short_video(3.0, 3.0))
+        self.assertTrue(run.is_short_video(3.0, 3.0))
 
     def test_конфликт_имени_получает_суффикс(self):
         """Ошибка: перемещение перезаписывает уже существующий файл."""
@@ -23,7 +23,7 @@ class VideoFilterTests(unittest.TestCase):
             existing.parent.mkdir(parents=True)
             existing.touch()
 
-            result = video_filter.unique_destination(source, destination_root, source_root)
+            result = run.unique_destination(source, destination_root, source_root)
 
             self.assertEqual(result, destination_root / "nested" / "clip_1.mov")
 
@@ -32,34 +32,36 @@ class VideoFilterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "clip.mov"
             path.touch()
-            options = video_filter.Options(
+            options = run.Options(
                 source=Path(directory),
+                mode="видео",
                 action="удалить",
                 destination=None,
                 max_duration=3.0,
                 dry_run=True,
             )
 
-            result = video_filter.process_video(path, options, duration_getter=lambda _: 2.0)
+            result = run.process_file(path, options, duration_getter=lambda _: 2.0)
 
             self.assertEqual(result, "предпросмотр")
             self.assertTrue(path.exists())
 
-    def test_cli_отклоняет_одинаковые_исходную_и_целевую_папки(self):
+    def test_параметры_отклоняют_одинаковые_исходную_и_целевую_папки(self):
         """Ошибка: рекурсивное перемещение запускается в ту же папку."""
         with tempfile.TemporaryDirectory() as directory:
-            code = video_filter.main(
-                [
-                    "--source",
-                    directory,
-                    "--action",
-                    "переместить",
-                    "--destination",
-                    directory,
-                ]
+            options = run.Options(
+                source=Path(directory),
+                mode="видео",
+                action="переместить",
+                destination=Path(directory),
+                max_duration=3.0,
+                dry_run=False,
             )
 
-            self.assertEqual(code, 2)
+            self.assertEqual(
+                run.validate_options(options),
+                "Целевая папка не должна совпадать с исходной или находиться внутри неё.",
+            )
 
 
 if __name__ == "__main__":
