@@ -114,6 +114,21 @@ class RunTests(unittest.TestCase):
 
             self.assertFalse(run.is_screenshot(path))
 
+    def test_опасно_большое_изображение_безопасно_пропускается(self):
+        """Ошибка: защитное исключение Pillow прерывает сбор всех скриншотов."""
+        path = Path("слишком-большое.png")
+        with patch.object(
+            Image,
+            "open",
+            side_effect=Image.DecompressionBombError("слишком много пикселей"),
+        ):
+            try:
+                result = run.is_screenshot(path)
+            except Image.DecompressionBombError:
+                self.fail("is_screenshot пробросил DecompressionBombError")
+
+        self.assertFalse(result)
+
     def test_сбор_видео_рекурсивно_оставляет_только_поддерживаемые_форматы(self):
         """Ошибка: сбор видео может пропустить вложенный файл или взять изображение."""
         with tempfile.TemporaryDirectory() as directory:
@@ -165,6 +180,72 @@ class RunTests(unittest.TestCase):
             destination = source / "результат"
             destination.mkdir(parents=True)
             options = SimpleNamespace(
+                source=source,
+                mode="видео",
+                action="переместить",
+                destination=destination,
+                max_duration=3.0,
+                dry_run=False,
+            )
+
+            self.assertEqual(
+                run.validate_options(options),
+                "Целевая папка не должна совпадать с исходной или находиться внутри неё.",
+            )
+
+    def test_физические_алиасы_исходной_папки_отклоняются(self):
+        """Ошибка: иной регистр пути обходит запрет совпадения и вложенности папок."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "Источник"
+            same_alias = root / "источник"
+            parent_alias = root / "ИСТОЧНИК"
+            nested_alias = parent_alias / "результат"
+            source.mkdir()
+            (source / "результат").mkdir()
+            if not same_alias.exists():
+                same_alias.mkdir()
+            if not nested_alias.exists():
+                nested_alias.mkdir(parents=True)
+
+            physical_aliases = {
+                frozenset((source, same_alias)),
+                frozenset((source, parent_alias)),
+            }
+            real_samefile = Path.samefile
+
+            def samefile(left, right):
+                if frozenset((left, right)) in physical_aliases:
+                    return True
+                return real_samefile(left, right)
+
+            with patch.object(Path, "samefile", autospec=True, side_effect=samefile):
+                for destination in (same_alias, nested_alias):
+                    with self.subTest(destination=destination):
+                        options = run.Options(
+                            source=source,
+                            mode="видео",
+                            action="переместить",
+                            destination=destination,
+                            max_duration=3.0,
+                            dry_run=False,
+                        )
+
+                        self.assertEqual(
+                            run.validate_options(options),
+                            "Целевая папка не должна совпадать с исходной или находиться внутри неё.",
+                        )
+
+    def test_ссылка_на_вложенную_целевую_папку_отклоняется(self):
+        """Ошибка: ссылка снаружи скрывает физическую вложенность назначения."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "исходные"
+            target = source / "вложенная"
+            target.mkdir(parents=True)
+            destination = root / "ссылка"
+            destination.symlink_to(target, target_is_directory=True)
+            options = run.Options(
                 source=source,
                 mode="видео",
                 action="переместить",
@@ -237,10 +318,92 @@ class RunTests(unittest.TestCase):
                 "перемещено": 1,
                 "удалено": 1,
                 "предпросмотр": 1,
-                "пропущено": 2,
-                "ошибки": 1,
+                "пропущено": 1,
+                "ошибки": 2,
             },
         )
+
+    def test_worker_передаёт_прогресс_в_главный_поток_через_after(self):
+        """Ошибка: worker обновляет UI напрямую или теряет шаги прогресса."""
+        app = object.__new__(run.MediaFilterApp)
+        scheduled = []
+        app.root = SimpleNamespace(
+            after=lambda delay, callback, *args: scheduled.append(
+                (delay, callback.__name__, args)
+            )
+        )
+        options = run.Options(
+            source=Path("/медиа"),
+            mode="видео",
+            action="удалить",
+            destination=None,
+            max_duration=3.0,
+            dry_run=True,
+        )
+        files = [Path("/медиа/1.mov"), Path("/медиа/2.mov")]
+
+        with (
+            patch.object(run, "collect_media", return_value=files),
+            patch.object(run, "process_file", side_effect=["предпросмотр", "предпросмотр"]),
+        ):
+            app._worker(options, None)
+
+        self.assertEqual(
+            scheduled,
+            [
+                (0, "_prepare_progress", (2,)),
+                (0, "_append_log", ("/медиа/1.mov: предпросмотр",)),
+                (0, "_update_progress", (1, 2)),
+                (0, "_append_log", ("/медиа/2.mov: предпросмотр",)),
+                (0, "_update_progress", (2, 2)),
+                (
+                    0,
+                    "_finish",
+                    (
+                        {
+                            "найдено": 2,
+                            "перемещено": 0,
+                            "удалено": 0,
+                            "предпросмотр": 2,
+                            "пропущено": 0,
+                            "ошибки": 0,
+                        },
+                    ),
+                ),
+            ],
+        )
+
+    def test_отказ_от_установки_зависимости_не_запускает_worker(self):
+        """Ошибка: установка или обработка начинается без явного подтверждения."""
+        with tempfile.TemporaryDirectory() as directory:
+            app = object.__new__(run.MediaFilterApp)
+            app.root = object()
+            app.mode = SimpleNamespace(get=lambda: "видео")
+            app.action = SimpleNamespace(get=lambda: "удалить")
+            app.source = SimpleNamespace(get=lambda: directory)
+            app.destination = SimpleNamespace(get=lambda: "")
+            app.max_duration = SimpleNamespace(get=lambda: "3")
+            log = []
+            prompts = []
+            app._append_log = log.append
+            app._set_running = lambda _: self.fail("Обработка была запущена")
+            dialog = SimpleNamespace(
+                askyesno=lambda title, text, parent: prompts.append((title, text)) or False
+            )
+
+            with (
+                patch.object(run, "missing_dependency", return_value="FFmpeg"),
+                patch.object(run, "messagebox", dialog),
+                patch.object(
+                    run.threading,
+                    "Thread",
+                    side_effect=AssertionError("Создан рабочий поток"),
+                ),
+            ):
+                app._start(dry_run=False)
+
+        self.assertEqual(log, ["Установка FFmpeg отменена пользователем."])
+        self.assertEqual(prompts[0][0], "Необходима зависимость")
 
     def test_зависимости_подсказываются_для_выбранного_режима(self):
         """Ошибка: приложению не удаётся подсказать Pillow или FFmpeg для режима."""

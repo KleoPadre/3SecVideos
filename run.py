@@ -58,7 +58,7 @@ def is_screenshot(path: Path) -> bool:
     try:
         with Image.open(path) as image:
             metadata = (*image.info.values(), *image.getexif().values())
-    except (OSError, SyntaxError, ValueError):
+    except (OSError, SyntaxError, ValueError, Image.DecompressionBombError):
         return False
     return any("Screenshot" in str(value) for value in metadata)
 
@@ -71,6 +71,21 @@ def collect_media(source: Path, mode: str) -> list[Path]:
     if mode == "скриншоты":
         return [path for path in files if is_screenshot(path)]
     return []
+
+
+def destination_is_inside_source(source: Path, destination: Path) -> bool:
+    """Проверяет физическое совпадение назначения с источником или его потомком."""
+    try:
+        if destination.samefile(source):
+            return True
+        physical_destination = destination.resolve()
+        return any(parent.samefile(source) for parent in physical_destination.parents)
+    except OSError:
+        resolved_source = source.resolve()
+        resolved_destination = destination.resolve()
+        return resolved_destination == resolved_source or resolved_destination.is_relative_to(
+            resolved_source
+        )
 
 
 def validate_options(options: Options) -> str | None:
@@ -88,9 +103,7 @@ def validate_options(options: Options) -> str | None:
     if options.action == "переместить":
         if options.destination is None or not options.destination.is_dir():
             return "Для перемещения укажите существующую целевую папку."
-        source = options.source.resolve()
-        destination = options.destination.resolve()
-        if destination == source or destination.is_relative_to(source):
+        if destination_is_inside_source(options.source, options.destination):
             return "Целевая папка не должна совпадать с исходной или находиться внутри неё."
     return None
 
@@ -199,7 +212,7 @@ def summarize_results(results: list[str]) -> dict[str, int]:
     for result in results:
         if result in {"перемещено", "удалено", "предпросмотр"}:
             summary[result] += 1
-        elif result in {"длинное видео", "ошибка длительности"}:
+        elif result == "длинное видео":
             summary["пропущено"] += 1
         else:
             summary["ошибки"] += 1
