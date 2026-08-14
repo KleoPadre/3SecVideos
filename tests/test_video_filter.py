@@ -45,6 +45,22 @@ class VideoFilterTests(unittest.TestCase):
             self.assertEqual(result, "предпросмотр")
             self.assertTrue(path.exists())
 
+    def test_cli_отклоняет_одинаковые_исходную_и_целевую_папки(self):
+        """Ошибка: рекурсивное перемещение запускается в ту же папку."""
+        with tempfile.TemporaryDirectory() as directory:
+            code = video_filter.main(
+                [
+                    "--source",
+                    directory,
+                    "--action",
+                    "переместить",
+                    "--destination",
+                    directory,
+                ]
+            )
+
+            self.assertEqual(code, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

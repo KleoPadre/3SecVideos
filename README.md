@@ -1,8 +1,35 @@
 # 3SecVideos
- Deleting or moving videos shorter than three seconds
 
-del.py - deletes .mp4, .avi, .mov, .mkv videos shorter than three seconds from a "source_folder" folder.
+`video_filter.py` ищет файлы `.mp4`, `.avi`, `.mov` и `.mkv` длительностью не более трёх секунд. Один скрипт умеет перемещать их или отправлять в Корзину macOS.
 
-mov.py - moves .mp4, .avi, .mov, .mkv videos shorter than three seconds from a "source_folder" folder to "destination_folder" folder.
+## Запуск
 
-**The script requires ffmpeg to run**
+Интерактивный режим:
+
+```bash
+python3 video_filter.py
+```
+
+Скрипт спросит исходную папку, действие и, при перемещении, целевую папку.
+
+Неинтерактивный режим:
+
+```bash
+python3 video_filter.py --source /Volumes/photo --action переместить --destination ~/Downloads/короткие-видео
+```
+
+Перед обработкой рекомендуется проверить результат без изменений файлов:
+
+```bash
+python3 video_filter.py --source /Volumes/photo --action удалить --dry-run
+```
+
+Дополнительные параметры:
+
+- `--max-duration 5` — установить другой порог длительности в секундах;
+- `--dry-run` — только вывести план действий;
+- `--install-missing` — установить FFmpeg, если он отсутствует (только macOS).
+
+Для работы нужен `ffprobe` из FFmpeg. Скрипт проверяет его при запуске. При отсутствии установите FFmpeg командой `brew install ffmpeg` или используйте `--install-missing`; установка Homebrew и FFmpeg запускается только с этим явным параметром.
+
+Внешние Python-пакеты не используются: виртуальное окружение и установка зависимостей Python не нужны. При перемещении структура подпапок сохраняется, а существующие файлы не перезаписываются. Удаление отправляет файлы в Корзину, не удаляя их безвозвратно.
