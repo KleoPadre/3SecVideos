@@ -88,11 +88,13 @@ git commit -m "Добавлен единый фильтр коротких ви�
 - [ ] **Step 1: Write the failing test**
 
 ```python
-def test_предпросмотр_не_вызывает_перемещение_or_корзину(tmp_path, mocker):
+def test_предпросмотр_не_вызывает_перемещение_или_корзину(tmp_path):
+    path = tmp_path / "clip.mov"
+    path.touch()
     options = video_filter.Options(source=tmp_path, action="удалить", destination=None, max_duration=3, dry_run=True)
-    trash = mocker.patch("video_filter.send_to_trash")
-    assert video_filter.process_video(tmp_path / "clip.mov", options, runner=mocker.Mock()) == "предпросмотр"
-    trash.assert_not_called()
+    result = video_filter.process_video(path, options, duration_getter=lambda _: 2.0)
+    assert result == "предпросмотр"
+    assert path.exists()
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
