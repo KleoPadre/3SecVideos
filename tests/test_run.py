@@ -3,6 +3,8 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from PIL import Image, PngImagePlugin
 
@@ -85,6 +87,114 @@ class RunTests(unittest.TestCase):
             Image.new("RGB", (1, 1)).save(root / "photo.png")
 
             self.assertEqual(run.collect_media(root, "скриншоты"), [expected])
+
+    def test_предпросмотр_не_изменяет_файл(self):
+        """Ошибка: предпросмотр удаляет или перемещает короткое видео."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "clip.mov"
+            path.touch()
+            options = SimpleNamespace(
+                source=Path(directory),
+                mode="видео",
+                action="удалить",
+                destination=None,
+                max_duration=3.0,
+                dry_run=True,
+            )
+
+            result = run.process_file(path, options, duration_getter=lambda _: 2.0)
+
+            self.assertEqual(result, "предпросмотр")
+            self.assertTrue(path.exists())
+
+    def test_целевая_папка_внутри_исходной_отклоняется(self):
+        """Ошибка: перемещение может рекурсивно обработать собственный результат."""
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "исходные"
+            destination = source / "результат"
+            destination.mkdir(parents=True)
+            options = SimpleNamespace(
+                source=source,
+                mode="видео",
+                action="переместить",
+                destination=destination,
+                max_duration=3.0,
+                dry_run=False,
+            )
+
+            self.assertEqual(
+                run.validate_options(options),
+                "Целевая папка не должна совпадать с исходной или находиться внутри неё.",
+            )
+
+    def test_перемещение_сохраняет_вложенность_файла(self):
+        """Ошибка: перемещение теряет подпапку или оставляет файл на прежнем месте."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "исходные"
+            path = source / "вложено" / "screen.png"
+            path.parent.mkdir(parents=True)
+            path.touch()
+            destination = root / "целевые"
+            destination.mkdir()
+            options = run.Options(
+                source=source,
+                mode="скриншоты",
+                action="переместить",
+                destination=destination,
+                max_duration=3.0,
+                dry_run=False,
+            )
+
+            result = run.process_file(path, options)
+
+            self.assertEqual(result, "перемещено")
+            self.assertFalse(path.exists())
+            self.assertTrue((destination / "вложено" / "screen.png").exists())
+
+    def test_удаление_видео_отправляет_файл_в_корзину(self):
+        """Ошибка: видео удаляется в обход Корзины или получает неверный статус."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "clip.mov"
+            path.touch()
+            options = run.Options(
+                source=Path(directory),
+                mode="видео",
+                action="удалить",
+                destination=None,
+                max_duration=3.0,
+                dry_run=False,
+            )
+            sent = []
+
+            with patch.object(run, "send_to_trash", side_effect=sent.append):
+                result = run.process_file(path, options, duration_getter=lambda _: 2.0)
+
+            self.assertEqual(result, "удалено")
+            self.assertEqual(sent, [path])
+
+    def test_сводка_группирует_результаты_обработки(self):
+        """Ошибка: пропуски и ошибки не попадают в итоговую сводку."""
+        result = run.summarize_results(
+            ["перемещено", "удалено", "предпросмотр", "длинное видео", "ошибка длительности", "ошибка: доступ"]
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "найдено": 6,
+                "перемещено": 1,
+                "удалено": 1,
+                "предпросмотр": 1,
+                "пропущено": 2,
+                "ошибки": 1,
+            },
+        )
+
+    def test_зависимости_подсказываются_для_выбранного_режима(self):
+        """Ошибка: приложению не удаётся подсказать Pillow или FFmpeg для режима."""
+        self.assertEqual(run.dependencies_for("видео"), ["FFmpeg"])
+        self.assertEqual(run.dependencies_for("скриншоты"), ["Pillow"])
 
 
 if __name__ == "__main__":
