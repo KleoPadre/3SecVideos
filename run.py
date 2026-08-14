@@ -82,23 +82,26 @@ def validate_options(options: Options) -> str | None:
 
 def get_video_duration(path: Path) -> float | None:
     """Возвращает длительность видео в секундах либо ``None`` при ошибке."""
-    result = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return None
     if result.returncode != 0:
         return None
     try:
@@ -116,6 +119,8 @@ def send_to_trash(path: Path) -> None:
 
 def process_file(path: Path, options: Options, duration_getter=get_video_duration) -> str:
     """Обрабатывает один файл и возвращает краткий результат операции."""
+    if options.mode == "скриншоты" and options.action != "переместить":
+        raise ValueError("Скриншоты можно только перемещать.")
     if options.mode == "видео":
         duration = duration_getter(path)
         if duration is None:

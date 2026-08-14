@@ -196,6 +196,31 @@ class RunTests(unittest.TestCase):
         self.assertEqual(run.dependencies_for("видео"), ["FFmpeg"])
         self.assertEqual(run.dependencies_for("скриншоты"), ["Pillow"])
 
+    def test_скриншот_нельзя_направить_в_корзину_прямым_вызовом(self):
+        """Ошибка: прямой вызов отправляет скриншот в Корзину в обход проверки UI."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "screen.png"
+            path.touch()
+            options = run.Options(
+                source=Path(directory),
+                mode="скриншоты",
+                action="удалить",
+                destination=None,
+                max_duration=3.0,
+                dry_run=False,
+            )
+
+            with patch.object(run, "send_to_trash", side_effect=AssertionError("Вызвана Корзина")):
+                with self.assertRaisesRegex(ValueError, "Скриншоты можно только перемещать"):
+                    run.process_file(path, options)
+
+            self.assertTrue(path.exists())
+
+    def test_отсутствующий_ffprobe_возвращает_ошибку_длительности(self):
+        """Ошибка: отсутствие ffprobe прерывает обработку исключением."""
+        with patch.object(run.subprocess, "run", side_effect=FileNotFoundError):
+            self.assertIsNone(run.get_video_duration(Path("clip.mov")))
+
 
 if __name__ == "__main__":
     unittest.main()
