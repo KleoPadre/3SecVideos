@@ -39,6 +39,17 @@ class RunTests(unittest.TestCase):
             self.assertIsNone(options)
             self.assertEqual(error, "Укажите максимальную длительность числом.")
 
+    def test_подготовка_параметров_отклоняет_пустую_исходную_папку(self):
+        """Ошибка: пустой путь превращается в текущую папку и допускает удаление."""
+        for source in ("", "   "):
+            with self.subTest(source=source):
+                options, error = run.build_options(
+                    "видео", source, None, "3", action="удалить"
+                )
+
+                self.assertIsNone(options)
+                self.assertEqual(error, "Укажите исходную папку.")
+
     def test_подготовка_скриншотов_игнорирует_скрытый_порог(self):
         """Ошибка: скрытый порог видео блокирует запуск режима скриншотов."""
         with tempfile.TemporaryDirectory() as directory:

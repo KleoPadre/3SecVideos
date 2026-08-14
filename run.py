@@ -105,6 +105,8 @@ def build_options(
     dry_run: bool = False,
 ) -> tuple[Options | None, str | None]:
     """Создаёт проверенные параметры из значений графического интерфейса."""
+    if isinstance(source, str) and not source.strip():
+        return None, "Укажите исходную папку."
     duration = 3.0
     if mode == "видео":
         try:
