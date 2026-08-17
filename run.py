@@ -8,6 +8,7 @@ import math
 import os
 from pathlib import Path
 import shutil
+import site
 import subprocess
 import sys
 import threading
@@ -23,6 +24,24 @@ else:
 
 
 VIDEO_EXTENSIONS = {".avi", ".mkv", ".mov", ".mp4"}
+
+
+def local_venv_path() -> Path:
+    """Возвращает путь к локальному виртуальному окружению приложения."""
+    return Path(__file__).resolve().parent / ".venv"
+
+
+def venv_python_path(venv: Path) -> Path:
+    """Возвращает путь к интерпретатору Python в виртуальном окружении macOS."""
+    return venv / "bin" / "python3"
+
+
+def enable_venv_packages(venv: Path | None = None) -> None:
+    """Добавляет пакеты локального окружения в пути поиска текущего Python."""
+    root = venv or local_venv_path()
+    packages = root / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+    if packages.is_dir():
+        site.addsitedir(str(packages))
 
 
 def fallback_python_for_tkinter(
@@ -74,6 +93,7 @@ def unique_destination(source: Path, destination_root: Path, source_root: Path) 
 
 def is_screenshot(path: Path) -> bool:
     """Проверяет наличие признака ``Screenshot`` в метаданных изображения."""
+    enable_venv_packages()
     from PIL import Image
 
     try:
@@ -84,14 +104,25 @@ def is_screenshot(path: Path) -> bool:
     return any("Screenshot" in str(value) for value in metadata)
 
 
-def collect_media(source: Path, mode: str) -> list[Path]:
-    """Рекурсивно собирает поддерживаемые файлы для выбранного режима."""
-    files = sorted(path for path in source.rglob("*") if path.is_file())
-    if mode == "видео":
-        return [path for path in files if path.suffix.lower() in VIDEO_EXTENSIONS]
-    if mode == "скриншоты":
-        return [path for path in files if is_screenshot(path)]
-    return []
+def collect_media(source: Path, mode: str, progress_callback=None) -> list[Path]:
+    """Рекурсивно собирает поддерживаемые файлы и сообщает ход поиска."""
+    found: list[Path] = []
+    checked = 0
+    for path in sorted(source.rglob("*")):
+        if not path.is_file():
+            continue
+        checked += 1
+        if mode == "видео":
+            selected = path.suffix.lower() in VIDEO_EXTENSIONS
+        elif mode == "скриншоты":
+            selected = is_screenshot(path)
+        else:
+            selected = False
+        if selected:
+            found.append(path)
+        if progress_callback is not None:
+            progress_callback(checked, len(found))
+    return found
 
 
 def destination_is_inside_source(source: Path, destination: Path) -> bool:
@@ -254,6 +285,7 @@ def missing_dependency(mode: str) -> str | None:
     if mode == "видео" and shutil.which("ffprobe") is None:
         return "FFmpeg"
     if mode == "скриншоты":
+        enable_venv_packages()
         try:
             importlib.import_module("PIL.Image")
         except ImportError:
@@ -269,7 +301,22 @@ def install_dependency(name: str) -> tuple[bool, str]:
             return False, "Homebrew не найден. Установите его, затем повторите запуск."
         command = [brew, "install", "ffmpeg"]
     elif name == "Pillow":
-        command = [sys.executable, "-m", "pip", "install", "Pillow>=10.3.0"]
+        venv = local_venv_path()
+        venv_python = venv_python_path(venv)
+        if not venv_python.is_file():
+            try:
+                created = subprocess.run(
+                    [sys.executable, "-m", "venv", str(venv)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            except OSError as error:
+                return False, str(error)
+            if created.returncode != 0:
+                details = created.stderr.strip() or created.stdout.strip()
+                return False, details or "Не удалось создать виртуальное окружение."
+        command = [str(venv_python), "-m", "pip", "install", "Pillow>=10.3.0"]
     else:
         return False, f"Неизвестная зависимость: {name}."
 
@@ -281,6 +328,8 @@ def install_dependency(name: str) -> tuple[bool, str]:
         details = result.stderr.strip() or result.stdout.strip()
         return False, details or f"Команда завершилась с кодом {result.returncode}."
     importlib.invalidate_caches()
+    if name == "Pillow":
+        enable_venv_packages()
     return True, "Установка завершена."
 
 
@@ -303,6 +352,7 @@ class MediaFilterApp:
         self.max_duration = tk.StringVar(value="3")
         self.progress_text = tk.StringVar(value="0 из 0 — 0%")
         self.summary_text = tk.StringVar(value="Сводка появится после обработки.")
+        self._search_progress_mark: str | None = None
 
         self._configure_window()
         self._configure_styles()
@@ -547,6 +597,29 @@ class MediaFilterApp:
         self.log.see("end")
         self.log.configure(state="disabled")
 
+    def _begin_search_log(self) -> None:
+        """Добавляет начало поиска и подготавливает одну обновляемую строку журнала."""
+        self._search_progress_mark = None
+        self._append_log("Начат поиск файлов…")
+
+    def _update_search_log(self, checked: int, found: int) -> None:
+        """Обновляет строку состояния поиска, не добавляя новую запись в журнал."""
+        text = f"Поиск: просмотрено {checked}, найдено {found}."
+        self.log.configure(state="normal")
+        if self._search_progress_mark is None:
+            self.log.insert("end", f"{text}\n")
+            mark = "search_progress"
+            self.log.mark_set(mark, "end-1l linestart")
+            self._search_progress_mark = mark
+        else:
+            mark = self._search_progress_mark
+            start = self.log.index(mark)
+            self.log.delete(start, f"{start} lineend")
+            self.log.insert(start, text)
+            self.log.mark_set(mark, start)
+        self.log.see("end")
+        self.log.configure(state="disabled")
+
     def _set_running(self, running: bool) -> None:
         state = "disabled" if running else "normal"
         self.preview_button.configure(state=state)
@@ -610,8 +683,14 @@ class MediaFilterApp:
                     return
                 self._post(self._append_log, details)
 
-            files = collect_media(options.source, options.mode)
+            self._post(self._begin_search_log)
+
+            def report_search_progress(checked: int, found: int) -> None:
+                self._post(self._update_search_log, checked, found)
+
+            files = collect_media(options.source, options.mode, report_search_progress)
             total = len(files)
+            self._post(self._append_log, f"Поиск завершён. Найдено файлов: {total}.")
             self._post(self._prepare_progress, total)
             results: list[str] = []
             for index, path in enumerate(files, start=1):

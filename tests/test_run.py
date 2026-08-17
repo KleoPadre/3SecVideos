@@ -166,6 +166,22 @@ class RunTests(unittest.TestCase):
 
             self.assertEqual(run.collect_media(root, "видео"), [expected])
 
+    def test_сбор_видео_сообщает_ход_поиска(self):
+        """Ошибка: во время поиска пользователь не видит число просмотренных и найденных файлов."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "clip.mov").touch()
+            (root / "audio.mp3").touch()
+            progress = []
+
+            run.collect_media(
+                root,
+                "видео",
+                lambda checked, found: progress.append((checked, found)),
+            )
+
+        self.assertEqual(progress, [(1, 0), (2, 1)])
+
     def test_сбор_скриншотов_рекурсивно_оставляет_только_файлы_с_признаком(self):
         """Ошибка: сбор скриншотов может включить изображение без метаданных."""
         with tempfile.TemporaryDirectory() as directory:
@@ -376,6 +392,8 @@ class RunTests(unittest.TestCase):
         self.assertEqual(
             scheduled,
             [
+                (0, "_begin_search_log", ()),
+                (0, "_append_log", ("Поиск завершён. Найдено файлов: 2.",)),
                 (0, "_prepare_progress", (2,)),
                 (0, "_append_log", ("/медиа/1.mov: предпросмотр",)),
                 (0, "_update_progress", (1, 2)),
@@ -395,6 +413,46 @@ class RunTests(unittest.TestCase):
                         },
                     ),
                 ),
+            ],
+        )
+
+    def test_worker_обновляет_одну_строку_хода_поиска_в_главном_потоке(self):
+        """Ошибка: ход поиска добавляется в журнал тысячами отдельных строк."""
+        app = object.__new__(run.MediaFilterApp)
+        scheduled = []
+        app.root = SimpleNamespace(
+            after=lambda delay, callback, *args: scheduled.append(
+                (delay, callback.__name__, args)
+            )
+        )
+        options = run.Options(
+            source=Path("/медиа"),
+            mode="видео",
+            action="удалить",
+            destination=None,
+            max_duration=3.0,
+            dry_run=True,
+        )
+        files = [Path("/медиа/1.mov"), Path("/медиа/2.mov")]
+
+        def collect(source, mode, progress_callback):
+            progress_callback(1, 1)
+            progress_callback(2, 2)
+            return files
+
+        with (
+            patch.object(run, "collect_media", side_effect=collect),
+            patch.object(run, "process_file", side_effect=["предпросмотр", "предпросмотр"]),
+        ):
+            app._worker(options, None)
+
+        self.assertEqual(
+            scheduled[:4],
+            [
+                (0, "_begin_search_log", ()),
+                (0, "_update_search_log", (1, 1)),
+                (0, "_update_search_log", (2, 2)),
+                (0, "_append_log", ("Поиск завершён. Найдено файлов: 2.",)),
             ],
         )
 
@@ -434,6 +492,33 @@ class RunTests(unittest.TestCase):
         """Ошибка: приложению не удаётся подсказать Pillow или FFmpeg для режима."""
         self.assertEqual(run.dependencies_for("видео"), ["FFmpeg"])
         self.assertEqual(run.dependencies_for("скриншоты"), ["Pillow"])
+
+    def test_pillow_устанавливается_в_локальное_виртуальное_окружение(self):
+        """Ошибка: Pillow ставится в управляемый Homebrew Python и установка завершается PEP 668."""
+        with tempfile.TemporaryDirectory() as directory:
+            venv = Path(directory) / ".venv"
+            venv_python = venv / "bin" / "python3"
+            commands = []
+
+            def run_command(command, **_):
+                commands.append(command)
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with (
+                patch.object(run, "local_venv_path", return_value=venv),
+                patch.object(run, "enable_venv_packages"),
+                patch.object(run.subprocess, "run", side_effect=run_command),
+            ):
+                installed, _ = run.install_dependency("Pillow")
+
+        self.assertTrue(installed)
+        self.assertEqual(
+            commands,
+            [
+                [run.sys.executable, "-m", "venv", str(venv)],
+                [str(venv_python), "-m", "pip", "install", "Pillow>=10.3.0"],
+            ],
+        )
 
     def test_скриншот_нельзя_направить_в_корзину_прямым_вызовом(self):
         """Ошибка: прямой вызов отправляет скриншот в Корзину в обход проверки UI."""
